@@ -3,7 +3,7 @@
   "publisher": "lee2py",
   "displayName": "Aider Composer",
   "description": "Seamless integration of Aider with VSCode",
-  "version": "1.3.5",
+  "version": "1.4.1",
   "icon": "resources/icon.png",
   "license": "Apache-2.0",
   "repository": {
@@ -33,6 +33,18 @@
         "key": "ctrl+alt+r",
         "mac": "cmd+alt+r",
         "when": "aider-composer.hasChanges"
+      },
+      {
+        "command": "aider-composer.GenerateCode",
+        "key": "ctrl+shift+k",
+        "mac": "cmd+shift+k",
+        "when": "editorTextFocus && !editorReadonly"
+      },
+      {
+        "command": "aider-composer.InsertIntoChat",
+        "key": "ctrl+shift+l",
+        "mac": "cmd+shift+l",
+        "when": "editorTextFocus && !editorReadonly"
       }
     ],
     "viewsContainers": {
@@ -110,6 +122,16 @@
         "command": "aider-composer.RejectAllChanges",
         "title": "Reject All Changes",
         "icon": "$(close-all)"
+      },
+      {
+        "command": "aider-composer.GenerateCode",
+        "title": "Generate Code",
+        "icon": "$(code)"
+      },
+      {
+        "command": "aider-composer.InsertIntoChat",
+        "title": "Insert Into Chat",
+        "icon": "$(arrow-right)"
       }
     ],
     "menus": {

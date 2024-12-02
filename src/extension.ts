@@ -1,12 +1,12 @@
 import * as vscode from 'vscode';
 import * as fsPromises from 'fs/promises';
 import VscodeReactView from './webViewProvider';
-import { DiffContentProviderId } from './types';
 import AiderChatService from './aiderChatService';
 import { InlineDiffViewManager } from './diffView/InlineDiff';
 import { DiffEditorViewManager } from './diffView/diffEditor';
 import { isProductionMode } from './utils/isProductionMode';
 import { DiffViewManager } from './diffView';
+import GenerateCodeManager from './generateCode/generateCodeManager';
 
 let outputChannel: vscode.LogOutputChannel;
 
@@ -41,11 +41,16 @@ export function activate(context: vscode.ExtensionContext) {
     diffViewManager = diffEditorDiffManager;
   }
 
+  // generate code manager
+  const generateCodeManager = new GenerateCodeManager(outputChannel);
+  context.subscriptions.push(generateCodeManager);
+
   // webview provider
   const webviewProvider = new VscodeReactView(
     context,
     outputChannel,
     diffViewManager,
+    generateCodeManager,
   );
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider(

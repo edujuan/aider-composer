@@ -5,12 +5,20 @@ import { SSE, SSEvent } from 'sse.js';
 import {
   ChatAssistantMessage,
   ChatMessage,
+  ChatReferenceFileItem,
   ChatReferenceItem,
+  ChatReferenceSnippetItem,
   DiffFormat,
+  DiffViewChange,
   SerializedChatUserMessageChunk,
 } from '../types';
 import { nanoid } from 'nanoid';
-import { logToOutput, showErrorMessage, writeFile } from '../commandApi';
+import {
+  cancelGenerateCode,
+  logToOutput,
+  showErrorMessage,
+  writeFile,
+} from '../commandApi';
 import useExtensionStore from './useExtensionStore';
 import { persistStorage } from './lib';
 
@@ -27,6 +35,7 @@ type ServerChatPayload = {
 };
 
 type ChatReferenceItemWithReadOnly = ChatReferenceItem & { readonly?: boolean };
+type ChatFileItemWithReadOnly = ChatReferenceFileItem & { readonly?: boolean };
 
 type ChatSessionHistory = {
   id: string;
@@ -85,7 +94,7 @@ export const useChatSessionStore = create(
               };
             }
 
-            const title = data[0].text;
+            const title = data[0].type === 'user' ? data[0].displayText.trim() : data[0].text.trim();
             return {
               ...state,
               sessions: [
@@ -110,6 +119,50 @@ export const useChatSessionStore = create(
   ),
 );
 
+function formatCurrentChatMessage(
+  message: string,
+  options: {
+    generateCodeSnippet?: ChatReferenceSnippetItem;
+    chatReferenceList?: ChatReferenceItemWithReadOnly[];
+  },
+) {
+  let reference = '';
+  if (options.chatReferenceList) {
+    reference = options.chatReferenceList
+      .filter((r) => r.type === 'snippet')
+      .map(
+        (r) =>
+          `<snippet fileName="${r.name}" language="${r.language}">\n${r.content}\n</snippet>`,
+      )
+      .join('\n');
+    reference = `the following snippets are available:\n${reference}`;
+  }
+
+  if (options.generateCodeSnippet) {
+    return `Your task is to generate code for the file \`${options.generateCodeSnippet.path}\` according to the user's request.
+First, read the user's request.
+Next, add the required code **only** on the line directly below the existing code in the file.
+**Do not generate code in any other part of the file. In other words, place the code immediately following the line with "print('hello world')" and nowhere else.**
+The existing code in \`${options.generateCodeSnippet.path}\` is as follows:
+\`\`\`${options.generateCodeSnippet.language}
+${options.generateCodeSnippet.content.trimEnd()}
+\`\`\`
+
+Here is the user's request, delimited by triple quotes:
+""" 
+${message}
+"""
+
+Please reply in the same language as the request.`;
+  }
+
+  if (reference) {
+    message = `${reference}\n\n${message}`;
+  }
+
+  return message;
+}
+
 export const useChatStore = create(
   combine(
     {
@@ -117,30 +170,38 @@ export const useChatStore = create(
       history: [] as ChatMessage[],
       // current assistant message from server
       current: undefined as ChatAssistantMessage | undefined,
+      // generate code snippet
+      generateCodeSnippet: undefined as ChatReferenceSnippetItem | undefined,
       // current chat reference list
       chatReferenceList: [] as ChatReferenceItemWithReadOnly[],
       // current editor file
-      currentEditorReference: undefined as
-        | ChatReferenceItemWithReadOnly
+      currentEditorReference: undefined as ChatFileItemWithReadOnly | undefined,
+      currentPreviewReference: undefined as
+        | ChatReferenceSnippetItem
         | undefined,
+
+      currentChatRequest: undefined as SSE | undefined,
+      currentEditFiles: [] as DiffViewChange[],
     },
     (set, get) => ({
-      clearChat() {
+      async clearChat() {
+        const { serverUrl } = useExtensionStore.getState();
+        await fetch(`${serverUrl}/api/chat`, {
+          method: 'DELETE',
+        });
         set({
           id: nanoid(),
           history: [],
           current: undefined,
         });
       },
-      setCurrentEditorReference(reference: ChatReferenceItemWithReadOnly) {
+      setCurrentEditorReference(reference: ChatFileItemWithReadOnly) {
         set({ currentEditorReference: reference });
       },
       addChatReference(reference: ChatReferenceItemWithReadOnly) {
         set((state) => {
           // if already exists, do nothing
-          if (
-            state.chatReferenceList.find((r) => r.fsPath === reference.fsPath)
-          ) {
+          if (state.chatReferenceList.find((r) => r.id === reference.id)) {
             return state;
           }
 
@@ -152,34 +213,53 @@ export const useChatStore = create(
       },
       removeChatReference(reference: ChatReferenceItemWithReadOnly) {
         set((state) => {
-          if (state.currentEditorReference?.fsPath === reference.fsPath) {
+          if (state.currentEditorReference?.id === reference.id) {
             return {
               ...state,
               currentEditorReference: undefined,
               chatReferenceList: state.chatReferenceList.filter(
-                (r) => r.fsPath !== reference.fsPath,
+                (r) => r.id !== reference.id,
               ),
             };
           }
 
           return {
             ...state,
-            chatReferenceList: state.chatReferenceList.filter(
-              (r) => r.fsPath !== reference.fsPath,
-            ),
+            chatReferenceList: state.chatReferenceList.filter((r) => {
+              return r.id !== reference.id;
+            }),
           };
         });
       },
+      async cancelGenerateCode() {
+        await cancelGenerateCode();
+        set({ generateCodeSnippet: undefined, currentEditFiles: [] });
+      },
+      clearEditFile() {
+        set({ currentEditFiles: [] });
+      },
+      closePreviewReference() {
+        set({ currentPreviewReference: undefined });
+      },
       clickOnChatReference(reference: ChatReferenceItemWithReadOnly) {
         set((state) => {
-          if (state.currentEditorReference?.fsPath === reference.fsPath) {
+          // click on snippet to open preview
+          if (reference.type === 'snippet') {
+            return {
+              ...state,
+              currentPreviewReference: reference,
+            };
+          }
+
+          if (state.currentEditorReference?.id === reference.id) {
             return state;
           }
 
+          // click on file to switch readonly state
           return {
             ...state,
             chatReferenceList: state.chatReferenceList.map((r) => {
-              if (r.fsPath === reference.fsPath) {
+              if (r.type === 'file' && r.id === reference.id) {
                 return { ...r, readonly: !r.readonly };
               }
               return r;
@@ -188,7 +268,8 @@ export const useChatStore = create(
         });
       },
       sendChatMessage(messageChunks: SerializedChatUserMessageChunk[]) {
-        const message = messageChunks
+        // this message is input by user
+        const inputMessage = messageChunks
           .map((item) =>
             typeof item === 'string' ? item : `\`${item.reference.path}\``,
           )
@@ -200,6 +281,7 @@ export const useChatStore = create(
           )
           .join('');
 
+        const message = formatCurrentChatMessage(inputMessage, get());
         logToOutput('info', `sendChatMessage: ${message}`);
 
         set((state) => {
@@ -223,10 +305,13 @@ export const useChatStore = create(
           };
         });
 
-        let referenceList = get().chatReferenceList.map((item) => ({
-          fs_path: item.fsPath,
-          readonly: item.readonly ?? false,
-        }));
+        // reference list for server
+        let referenceList = get()
+          .chatReferenceList.filter((item) => item.type === 'file')
+          .map((item) => ({
+            fs_path: item.fsPath,
+            readonly: item.readonly ?? false,
+          }));
         const currentEditorFsPath = get().currentEditorReference?.fsPath;
         if (currentEditorFsPath) {
           referenceList = referenceList.filter(
@@ -249,10 +334,12 @@ export const useChatStore = create(
           payload: JSON.stringify({
             chat_type: chatType,
             diff_format: diffFormat,
-            message,
+            message: message,
             reference_list: referenceList,
           } satisfies ServerChatPayload),
         });
+
+        set({ currentChatRequest: eventSource });
 
         eventSource.addEventListener('data', (event: { data: string }) => {
           const chunkMessage = JSON.parse(event.data) as ChatChunkMessage;
@@ -299,13 +386,17 @@ export const useChatStore = create(
               ? [...state.history, state.current]
               : state.history;
 
-            const id = state.id;
-            useChatSessionStore.getState().addSession(id, history);
+            // generate code do not store in session
+            if (!state.generateCodeSnippet) {
+              const id = state.id;
+              useChatSessionStore.getState().addSession(id, history);
+            }
 
             return {
               ...state,
               history,
               current: undefined,
+              currentChatRequest: undefined,
             };
           });
         };
@@ -328,8 +419,11 @@ export const useChatStore = create(
               referenceList: state.chatReferenceList,
             });
 
-            const id = state.id;
-            useChatSessionStore.getState().addSession(id, history);
+            // generate code do not store in session
+            if (!state.generateCodeSnippet) {
+              const id = state.id;
+              useChatSessionStore.getState().addSession(id, history);
+            }
 
             // create new assistant message for next round
             return {
@@ -373,6 +467,10 @@ export const useChatStore = create(
           end();
           eventSource.close();
         };
+      },
+      cancelChat() {
+        get().currentChatRequest?.close();
+        set({ currentChatRequest: undefined });
       },
     }),
   ),

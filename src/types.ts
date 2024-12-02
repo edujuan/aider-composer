@@ -1,5 +1,3 @@
-export const DiffContentProviderId = 'aider-diff';
-
 export interface DiffParams {
   // file path
   original: string;

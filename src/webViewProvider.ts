@@ -13,9 +13,9 @@ import * as path from 'path';
 import fsPromise from 'fs/promises';
 import { getUri } from './utils/getUri';
 import { getNonce } from './utils/getNonce';
-import { DiffContentProviderId, DiffParams } from './types';
 import { isProductionMode } from './utils/isProductionMode';
 import { DiffViewManager } from './diffView';
+import GenerateCodeManager from './generateCode/generateCodeManager';
 
 class VscodeReactView implements WebviewViewProvider {
   public static readonly viewType = 'aider-composer.SidebarProvider';
@@ -35,6 +35,7 @@ class VscodeReactView implements WebviewViewProvider {
     private readonly context: vscode.ExtensionContext,
     private outputChannel: vscode.LogOutputChannel,
     private diffViewManager: DiffViewManager,
+    private generateCodeManager: GenerateCodeManager,
   ) {
     this.setupPromise = new Promise((resolve) => {
       this.setupResolve = () => {
@@ -48,6 +49,69 @@ class VscodeReactView implements WebviewViewProvider {
         this.setupResolve = () => { };
       };
     });
+
+    this.disposables.push(
+      generateCodeManager.onDidChangeCurrentGeneration((generation) => {
+        const uri = vscode.Uri.parse(generation.uri);
+        this.postMessageToWebview({
+          command: 'generate-code',
+          data: {
+            ...generation,
+            id: nanoid(),
+            type: 'snippet',
+            name: `${path.basename(uri.fsPath)}(${generation.codeRange[0]}-${generation.codeRange[1]})`,
+            content: generation.code,
+            language: generation.language,
+            fsPath: uri.fsPath,
+            path: path.relative(this.getFileBasePath(uri), uri.fsPath),
+          },
+        });
+      }),
+
+      diffViewManager.onDidChange((change) => {
+        this.postMessageToWebview({
+          command: 'diff-view-change',
+          data: {
+            type: change.type,
+            path: path.relative(
+              this.getFileBasePath(vscode.Uri.file(change.path)),
+              change.path,
+            ),
+            name: path.basename(change.path),
+            fsPath: change.path,
+          },
+        });
+      }),
+
+      vscode.commands.registerTextEditorCommand(
+        'aider-composer.InsertIntoChat',
+        async (editor: vscode.TextEditor) => {
+          const selection = editor.selection;
+          const uri = editor.document.uri;
+
+          await vscode.commands.executeCommand(
+            'workbench.view.extension.aider-composer-activitybar',
+          );
+
+          if (!selection.isEmpty) {
+            const text = editor.document.getText(selection);
+            this.postMessageToWebview({
+              command: 'insert-into-chat',
+              data: {
+                id: nanoid(),
+                type: 'snippet',
+                name: `${path.basename(uri.fsPath)}(${selection.start.line + 1}-${selection.end.line + 1})`,
+                content: text,
+                language: editor.document.languageId,
+                fsPath: uri.fsPath,
+                path: path.relative(this.getFileBasePath(uri), uri.fsPath),
+                codeRange: [selection.start.line + 1, selection.end.line + 1],
+              },
+            });
+          }
+        },
+      ),
+    );
   }
 
   public resolveWebviewView(
@@ -81,7 +145,7 @@ class VscodeReactView implements WebviewViewProvider {
   private getHtmlForWebview(webview: Webview) {
     const file = 'src/main.tsx';
     const localPort = '5173';
-    const localServerUrl = `localhost:${localPort}`;
+    const localServerUrl = `127.0.0.1:${localPort}`;
 
     // The CSS file from the React build output
     const stylesUri = getUri(webview, this.context.extensionUri, [
@@ -106,7 +170,7 @@ class VscodeReactView implements WebviewViewProvider {
 
     const reactRefresh = /*html*/ `
         <script type="module">
-          import RefreshRuntime from "http://localhost:5173/@react-refresh"
+          import RefreshRuntime from "http://127.0.0.1:5173/@react-refresh"
           RefreshRuntime.injectIntoGlobalHook(window)
           window.$RefreshReg$ = () => {}
           window.$RefreshSig$ = () => (type) => type
@@ -195,6 +259,24 @@ class VscodeReactView implements WebviewViewProvider {
           case 'show-info-message':
             promise = this.showInfoMessage(data);
             break;
+          // accept/reject file
+          case 'accept-file':
+            promise = this.acceptFile(data.path);
+            break;
+          case 'reject-file':
+            promise = this.rejectFile(data.path);
+            break;
+          // generate code
+          case 'cancel-generate-code':
+            promise = this.cancelGenerateCode();
+            break;
+          case 'accept-generate-code':
+            promise = this.acceptGenerateCode();
+            break;
+          case 'reject-generate-code':
+            promise = this.rejectGenerateCode();
+            break;
+          // store state
           case 'set-global-state':
             promise = this.setGlobalState(data);
             break;
@@ -245,6 +327,28 @@ class VscodeReactView implements WebviewViewProvider {
         data: this.serverUrl,
       });
     }
+  }
+
+  private async acceptFile(path: string) {
+    return this.diffViewManager.acceptFile(path);
+  }
+
+  private async rejectFile(path: string) {
+    return this.diffViewManager.rejectFile(path);
+  }
+
+  private async cancelGenerateCode() {
+    return this.generateCodeManager.clearCurrentGeneration();
+  }
+
+  private async acceptGenerateCode() {
+    await this.diffViewManager.acceptAllFile();
+    return this.generateCodeManager.clearCurrentGeneration();
+  }
+
+  private async rejectGenerateCode() {
+    await this.diffViewManager.rejectAllFile();
+    return this.generateCodeManager.clearCurrentGeneration();
   }
 
   private async setSecretState(data: { key: string; value: any }) {
@@ -323,6 +427,8 @@ class VscodeReactView implements WebviewViewProvider {
         }
 
         return {
+          id: uri.fsPath,
+          type: 'file',
           name: path.basename(uri.fsPath),
           basePath: basePath,
           path: path.relative(basePath, uri.fsPath),
@@ -367,6 +473,8 @@ class VscodeReactView implements WebviewViewProvider {
             ? path.relative(basePath, item.fsPath)
             : item.fsPath;
           return {
+            id: item.fsPath,
+            type: 'file',
             name: path.basename(item.fsPath),
             basePath,
             path: relativePath,
@@ -402,6 +510,8 @@ class VscodeReactView implements WebviewViewProvider {
       id: nanoid(),
       command: 'current-editor-changed',
       data: {
+        id: uri.fsPath,
+        type: 'file',
         name: path.basename(uri.fsPath),
         basePath,
         path: path.relative(basePath, uri.fsPath),

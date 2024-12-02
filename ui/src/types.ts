@@ -1,6 +1,24 @@
-type FileItem = { type: 'file'; fsPath: string; path: string; name: string };
+export type ChatReferenceFileItem = {
+  // this is just fsPath
+  id: string;
+  type: 'file';
+  fsPath: string;
+  path: string;
+  name: string;
+};
 
-export type ChatReferenceItem = FileItem;
+export type ChatReferenceSnippetItem = {
+  id: string;
+  type: 'snippet';
+  name: string;
+  content: string;
+  language?: string;
+  path: string;
+};
+
+export type ChatReferenceItem =
+  | ChatReferenceFileItem
+  | ChatReferenceSnippetItem;
 
 export interface ChatUserMessage {
   id: string;
@@ -30,3 +48,10 @@ export enum DiffFormat {
   UDiff = 'udiff',
   Whole = 'whole',
 }
+
+export type DiffViewChange = {
+  type: 'add' | 'accept' | 'reject';
+  path: string;
+  name: string;
+  fsPath: string;
+};

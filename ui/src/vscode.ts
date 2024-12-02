@@ -1,7 +1,11 @@
 import { nanoid } from 'nanoid';
 import useExtensionStore, { ViewType } from './stores/useExtensionStore';
 import { useChatStore } from './stores/useChatStore';
-import { ChatReferenceItem } from './types';
+import {
+  ChatReferenceFileItem,
+  ChatReferenceSnippetItem,
+  DiffViewChange,
+} from './types';
 
 type Resolver = {
   resolve: (data: unknown) => void;
@@ -79,10 +83,6 @@ addCommandEventListener('new-chat', async () => {
     useExtensionStore.setState({ viewType: 'chat' });
   } else {
     // clear chat history
-    const { serverUrl } = useExtensionStore.getState();
-    await fetch(`${serverUrl}/api/chat`, {
-      method: 'DELETE',
-    });
     useChatStore.getState().clearChat();
   }
 });
@@ -92,14 +92,57 @@ addCommandEventListener('set-view-type', ({ data }) => {
 });
 
 addCommandEventListener('current-editor-changed', ({ data }) => {
-  const item = data as ChatReferenceItem;
+  const item = data as ChatReferenceFileItem;
   useChatStore.setState({ currentEditorReference: item });
 });
 
 addCommandEventListener('server-started', async ({ data }) => {
-  console.log('server-started', data);
+  console.debug('server-started', data);
   useExtensionStore.setState({
     isStarted: true,
     serverUrl: data as string,
+  });
+});
+
+addCommandEventListener('generate-code', ({ data }) => {
+  console.debug('generate-code', data);
+  useChatStore.setState({
+    generateCodeSnippet: data as ChatReferenceSnippetItem,
+  });
+});
+
+addCommandEventListener('insert-into-chat', ({ data }) => {
+  console.debug('insert-into-chat', data);
+  if (data) {
+    useChatStore.setState((state) => ({
+      ...state,
+      chatReferenceList: [
+        ...state.chatReferenceList,
+        data as ChatReferenceSnippetItem,
+      ],
+    }));
+  }
+  useExtensionStore.setState({ viewType: 'chat' });
+});
+
+addCommandEventListener('diff-view-change', (params) => {
+  const data = params.data as DiffViewChange;
+  console.debug('diff-view-change', data);
+  useChatStore.setState((state) => {
+    const isExist = state.currentEditFiles.some(
+      (file) => file.path === data.path,
+    );
+    if (isExist) {
+      return {
+        ...state,
+        currentEditFiles: state.currentEditFiles.map((item) =>
+          item.path === data.path ? data : item,
+        ),
+      };
+    }
+    return {
+      ...state,
+      currentEditFiles: [...state.currentEditFiles, data],
+    };
   });
 });

@@ -13,7 +13,8 @@ class DiffContentProvider implements vscode.TextDocumentContentProvider {
 export class DiffEditorViewManager extends DiffViewManager {
   static readonly DiffContentProviderId = 'aider-diff';
 
-  private fileChangeSet = new Set<string>();
+  // uri -> content
+  private fileChangeSet = new Map<string, string>();
 
   constructor(
     private context: vscode.ExtensionContext,
@@ -46,7 +47,11 @@ export class DiffEditorViewManager extends DiffViewManager {
             outputChannel.error(`Error writing file: ${error}`);
           }
 
-          this.fileChangeSet.delete(uri.path);
+          this.fileChangeSet.delete(uri.toString());
+          this._onDidChange.fire({
+            type: 'accept',
+            path: fileUri.fsPath,
+          });
 
           await vscode.commands.executeCommand(
             'workbench.action.closeActiveEditor',
@@ -68,7 +73,11 @@ export class DiffEditorViewManager extends DiffViewManager {
           this.outputChannel.debug(
             `Diff document closed for: ${document.uri.path}`,
           );
-          this.fileChangeSet.delete(document.uri.path);
+          this.fileChangeSet.delete(document.uri.toString());
+          this._onDidChange.fire({
+            type: 'reject',
+            path: document.uri.fsPath,
+          });
         }
       }),
     );
@@ -115,6 +124,87 @@ export class DiffEditorViewManager extends DiffViewManager {
       this.outputChannel.error(`Error opening diff: ${error}`);
     }
 
-    this.fileChangeSet.add(data.path);
+    this.fileChangeSet.set(vscode.Uri.file(data.path).toString(), data.content);
+    this._onDidChange.fire({
+      type: 'add',
+      path: data.path,
+    });
+  }
+
+  // close all diff editor with DiffContentProviderId
+  private async closeAllDiffEditor(): Promise<void> {
+    // Find all tab groups
+    const tabGroups = vscode.window.tabGroups.all;
+
+    for (const group of tabGroups) {
+      // Find tabs that match our diff URI scheme
+      const diffTabs = group.tabs.filter(
+        (tab) =>
+          tab.input instanceof vscode.TabInputTextDiff &&
+          tab.input.modified.scheme ===
+            DiffEditorViewManager.DiffContentProviderId,
+      );
+
+      // Close the matching tabs
+      if (diffTabs.length > 0) {
+        await vscode.window.tabGroups.close(diffTabs);
+      }
+    }
+
+    // Clear the file change set after closing all editors
+    this.fileChangeSet.clear();
+  }
+
+  async acceptAllFile(): Promise<void> {
+    for (const [uri, content] of this.fileChangeSet.entries()) {
+      await vscode.workspace.fs.writeFile(
+        vscode.Uri.parse(uri),
+        Buffer.from(content),
+      );
+    }
+    await this.closeAllDiffEditor();
+  }
+
+  async rejectAllFile(): Promise<void> {
+    await this.closeAllDiffEditor();
+  }
+
+  private async closeDiffEditor(path: string): Promise<void> {
+    // Find all tab groups
+    const tabGroups = vscode.window.tabGroups.all;
+    const targetUri = vscode.Uri.file(path).toString();
+
+    for (const group of tabGroups) {
+      // Find tabs that match our diff URI scheme and the specified path
+      const diffTabs = group.tabs.filter(
+        (tab) =>
+          tab.input instanceof vscode.TabInputTextDiff &&
+          tab.input.modified.scheme ===
+            DiffEditorViewManager.DiffContentProviderId &&
+          tab.input.modified.path === path,
+      );
+
+      // Close the matching tabs
+      if (diffTabs.length > 0) {
+        await vscode.window.tabGroups.close(diffTabs);
+      }
+    }
+
+    // Remove the file from the change set
+    this.fileChangeSet.delete(targetUri);
+  }
+
+  async acceptFile(path: string): Promise<void> {
+    const uri = vscode.Uri.file(path);
+    const content = this.fileChangeSet.get(uri.toString());
+
+    if (content) {
+      await vscode.workspace.fs.writeFile(uri, Buffer.from(content));
+      await this.closeDiffEditor(path);
+    }
+  }
+
+  async rejectFile(path: string): Promise<void> {
+    await this.closeDiffEditor(path);
   }
 }

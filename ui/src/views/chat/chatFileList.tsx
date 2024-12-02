@@ -8,7 +8,7 @@ import { getOpenedFiles, searchFile } from '../../commandApi';
 import { useDebounceEffect } from 'ahooks';
 import ScrollArea from '../../components/scrollArea';
 import { useChatStore } from '../../stores/useChatStore';
-import { ChatReferenceItem } from '../../types';
+import { ChatReferenceFileItem } from '../../types';
 
 const Button = styled.button({
   height: '18px',
@@ -103,7 +103,7 @@ const listCss = css({
 // when empty input, show opened files in editor
 // when input, show search result
 function FileSearchList() {
-  const [references, setReferences] = useState<ChatReferenceItem[]>([]);
+  const [references, setReferences] = useState<ChatReferenceFileItem[]>([]);
   const [query, setQuery] = useState('');
 
   const addChatReference = useChatStore((state) => state.addChatReference);
@@ -113,12 +113,12 @@ function FileSearchList() {
       if (!query) {
         setReferences([]);
         getOpenedFiles().then((files) => {
-          setReferences(files.map((file) => ({ type: 'file', ...file })));
+          setReferences(files.map((file) => ({ ...file, type: 'file' })));
         });
         return;
       }
       searchFile(query).then((files) => {
-        setReferences(files.map((file) => ({ type: 'file', ...file })));
+        setReferences(files.map((file) => ({ ...file, type: 'file' })));
       });
     },
     [query],
@@ -165,6 +165,10 @@ export default function ChatFileList() {
   const currentEditorReference = useChatStore(
     (state) => state.currentEditorReference,
   );
+  const generateCodeSnippet = useChatStore(
+    (state) => state.generateCodeSnippet,
+  );
+
   const chatReferenceList = useChatStore((state) => state.chatReferenceList);
   const removeChatReference = useChatStore(
     (state) => state.removeChatReference,
@@ -172,6 +176,8 @@ export default function ChatFileList() {
   const clickOnChatReference = useChatStore(
     (state) => state.clickOnChatReference,
   );
+
+  const cancelGenerateCode = useChatStore((state) => state.cancelGenerateCode);
 
   return (
     <div
@@ -208,6 +214,16 @@ export default function ChatFileList() {
           </Popover.Content>
         </Popover.Portal>
       </Popover.Root>
+      {generateCodeSnippet && (
+        <FileItem
+          key={'generate-code'}
+          name={generateCodeSnippet.name}
+          type={'generate code'}
+          isEdit={false}
+          title={generateCodeSnippet.path}
+          onClose={() => cancelGenerateCode()}
+        />
+      )}
       {currentEditorReference && (
         <FileItem
           key={'current'}
@@ -218,19 +234,17 @@ export default function ChatFileList() {
           onClose={() => removeChatReference(currentEditorReference)}
         />
       )}
-      {chatReferenceList
-        .filter((item) => item.fsPath !== currentEditorReference?.fsPath)
-        .map((reference) => (
-          <FileItem
-            key={reference.path}
-            {...reference}
-            type={reference.type}
-            isEdit={!reference.readonly}
-            title={reference.path}
-            onClick={() => clickOnChatReference(reference)}
-            onClose={() => removeChatReference(reference)}
-          />
-        ))}
+      {chatReferenceList.map((reference, index) => (
+        <FileItem
+          key={`${reference.path}-${index}`}
+          {...reference}
+          type={reference.type}
+          isEdit={reference.type === 'file' && !reference.readonly}
+          title={reference.path}
+          onClick={() => clickOnChatReference(reference)}
+          onClose={() => removeChatReference(reference)}
+        />
+      ))}
     </div>
   );
 }

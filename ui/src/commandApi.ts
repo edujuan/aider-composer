@@ -1,4 +1,4 @@
-import { ChatReferenceItem } from './types';
+import { ChatReferenceFileItem } from './types';
 import { callCommand } from './vscode';
 
 export function webviewReady() {
@@ -7,12 +7,41 @@ export function webviewReady() {
 
 export function searchFile(query: string, limit: number = 20) {
   return callCommand('search-file', { query, limit }) as Promise<
-    { fsPath: string; path: string; basePath: string; name: string }[]
+    ChatReferenceFileItem[]
   >;
 }
 
 export function writeFile(params: { path: string; content: string }) {
   return callCommand('write-file', params);
+}
+
+// accept/reject file
+
+/**
+ * @param path: fs path
+ */
+export function acceptFile(path: string) {
+  return callCommand('accept-file', { path });
+}
+
+/**
+ * @param path: fs path
+ */
+export function rejectFile(path: string) {
+  return callCommand('reject-file', { path });
+}
+
+// generate code
+export function cancelGenerateCode() {
+  return callCommand('cancel-generate-code', null);
+}
+
+export function acceptGenerateCode() {
+  return callCommand('accept-generate-code', null);
+}
+
+export function rejectGenerateCode() {
+  return callCommand('reject-generate-code', null);
 }
 
 export function logToOutput(type: 'info' | 'warn' | 'error', message: string) {
@@ -29,7 +58,7 @@ export function showInfoMessage(message: string) {
 
 export function getOpenedFiles() {
   return callCommand('get-opened-files', null) as Promise<
-    Omit<ChatReferenceItem, 'type'>[]
+    Omit<ChatReferenceFileItem, 'type'>[]
   >;
 }
 
