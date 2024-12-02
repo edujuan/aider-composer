@@ -61,6 +61,14 @@ export function activate(context: vscode.ExtensionContext) {
     webviewProvider,
   );
 
+  // Move view to Secondary Side Bar when activated
+  context.subscriptions.push(
+    vscode.commands.registerCommand('aider-composer.openInSecondarySideBar', async () => {
+      await vscode.commands.executeCommand('workbench.action.moveEditorToNextGroup');
+      await vscode.commands.executeCommand('workbench.action.toggleAuxiliaryBar');
+    })
+  );
+
   // add button click
   context.subscriptions.push(
     vscode.commands.registerCommand('aider-composer.AddButtonClick', () => {

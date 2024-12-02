@@ -18,7 +18,7 @@ import { DiffViewManager } from './diffView';
 import GenerateCodeManager from './generateCode/generateCodeManager';
 
 class VscodeReactView implements WebviewViewProvider {
-  public static readonly viewType = 'aider-composer.SidebarProvider';
+  public static readonly viewType = 'aider-composer.rightSidebarProvider';
   private disposables: Disposable[] = [];
 
   private view?: WebviewView;
@@ -123,7 +123,12 @@ class VscodeReactView implements WebviewViewProvider {
 
     this.view.webview.options = {
       enableScripts: true,
-      localResourceRoots: [this.context.extensionUri],
+      enableForms: true,
+      localResourceRoots: [
+        this.context.extensionUri,
+        vscode.Uri.parse('http://127.0.0.1:5004'),
+        vscode.Uri.parse('http://localhost:5004')
+      ]
     };
 
     this.view.webview.html = this.getHtmlForWebview(this.view.webview);
@@ -177,33 +182,25 @@ class VscodeReactView implements WebviewViewProvider {
           window.__vite_plugin_react_preamble_installed__ = true
         </script>`;
 
-    // const reactRefreshHash =
-    //   "sha256-YmMpkm5ow6h+lfI3ZRp0uys+EUCt6FOyLkJERkfVnTY=";
-
     const csp = [
       `default-src 'none';`,
-      `script-src 'unsafe-eval' https://* ${isProd
-        ? `'nonce-${nonce}'`
-        : // 这里的hash是计算的什么代码的hash？
-        // : `http://${localServerUrl} http://0.0.0.0:${localPort} '${reactRefreshHash}'`
-        `http://${localServerUrl} http://0.0.0.0:${localPort} 'unsafe-inline'`
-      }`,
-      `style-src ${webview.cspSource} 'self' 'unsafe-inline' https://*`,
-      `font-src ${webview.cspSource}`,
-      `connect-src https://* ${isProd
-        ? `http://127.0.0.1:*`
-        : `ws://${localServerUrl} http://localhost:*  http://127.0.0.1:*`
-      }`,
+      `script-src 'unsafe-eval' 'unsafe-inline' ${webview.cspSource} http://127.0.0.1:* http://localhost:*;`,
+      `style-src 'unsafe-inline' ${webview.cspSource} http://127.0.0.1:* http://localhost:*;`,
+      `img-src ${webview.cspSource} data:;`,
+      `font-src ${webview.cspSource};`,
+      `connect-src http://127.0.0.1:* http://localhost:* vscode-webview://* ${webview.cspSource};`,
+      `worker-src 'self' blob: ${webview.cspSource};`,
+      `frame-src 'self';`,
+      `form-action 'self';`
     ];
 
     return /*html*/ `<!DOCTYPE html>
       <html lang="en">
         <head>
           <meta charset="UTF-8" />
-          <meta http-equiv="Content-Security-Policy" content="${csp.join(
-      '; ',
-    )}">
+          <meta http-equiv="Content-Security-Policy" content="${csp.join('; ')}">
           <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+          <meta http-equiv="Access-Control-Allow-Origin" content="*" />
           <link rel="stylesheet" type="text/css" href="${stylesUri}">
           <title>VSCode React Starter</title>
         </head>
@@ -238,6 +235,9 @@ class VscodeReactView implements WebviewViewProvider {
 
         let promise: Promise<any> | any;
         switch (command) {
+          case 'proxy-request':
+            promise = this.proxyRequest(data.url, data.options);
+            break;
           case 'webview-ready':
             promise = this.webviewReady();
             break;
@@ -528,6 +528,58 @@ class VscodeReactView implements WebviewViewProvider {
       command: 'server-started',
       data: url,
     });
+
+    // Try to connect to the server to verify it's working
+    fetch(`${url}/api/chat`, {
+      method: 'OPTIONS',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      mode: 'cors',
+    })
+      .then(response => {
+        this.outputChannel.info(`Server connection test: ${response.status}`);
+      })
+      .catch(error => {
+        this.outputChannel.error(`Server connection test failed: ${error}`);
+      });
+  }
+
+  private async proxyRequest(url: string, options: any) {
+    this.outputChannel.info(`Proxying request to: ${url}`);
+    this.outputChannel.info(`Request options: ${JSON.stringify(options)}`);
+
+    try {
+      const response = await fetch(url, {
+        ...options,
+        headers: {
+          ...options.headers,
+          'Accept': 'application/json',
+        }
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        this.outputChannel.error(`Server error: ${response.status} ${response.statusText}`);
+        this.outputChannel.error(`Error details: ${errorText}`);
+        throw new Error(`Server error: ${response.status} ${response.statusText}`);
+      }
+
+      const contentType = response.headers.get('content-type');
+      let data;
+
+      if (contentType && contentType.includes('application/json')) {
+        data = await response.json();
+      } else {
+        data = await response.text();
+      }
+
+      this.outputChannel.info(`Proxy response: ${JSON.stringify(data)}`);
+      return data;
+    } catch (error) {
+      this.outputChannel.error(`Proxy error: ${error}`);
+      throw error;
+    }
   }
 }
 

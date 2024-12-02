@@ -45,6 +45,11 @@
         "key": "ctrl+shift+l",
         "mac": "cmd+shift+l",
         "when": "editorTextFocus && !editorReadonly"
+      },
+      {
+        "command": "aider-composer.openInSecondarySideBar",
+        "key": "ctrl+l",
+        "mac": "cmd+l"
       }
     ],
     "viewsContainers": {
@@ -60,7 +65,7 @@
       "aider-composer-activitybar": [
         {
           "type": "webview",
-          "id": "aider-composer.SidebarProvider",
+          "id": "aider-composer.rightSidebarProvider",
           "name": "Aider Composer",
           "when": "aider-composer.Started"
         }
@@ -138,17 +143,17 @@
       "view/title": [
         {
           "command": "aider-composer.AddButtonClick",
-          "when": "view == aider-composer.SidebarProvider",
+          "when": "view == aider-composer.rightSidebarProvider",
           "group": "navigation@1"
         },
         {
           "command": "aider-composer.HistoryButtonClick",
-          "when": "view == aider-composer.SidebarProvider",
+          "when": "view == aider-composer.rightSidebarProvider",
           "group": "navigation@2"
         },
         {
           "command": "aider-composer.SettingButtonClick",
-          "when": "view == aider-composer.SidebarProvider",
+          "when": "view == aider-composer.rightSidebarProvider",
           "group": "navigation@3"
         }
       ],
