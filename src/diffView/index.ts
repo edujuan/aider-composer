@@ -2,14 +2,14 @@ import * as vscode from 'vscode';
 
 type DiffViewChange =
   | {
-      type: 'add';
-      path: string;
-    }
+    type: 'add';
+    path: string;
+  }
   | {
-      type: 'accept' | 'reject';
-      /** file path, URI.fsPath */
-      path: string;
-    };
+    type: 'accept' | 'reject';
+    /** file path, URI.fsPath */
+    path: string;
+  };
 
 export abstract class DiffViewManager {
   protected disposables: vscode.Disposable[] = [];
@@ -32,10 +32,10 @@ export abstract class DiffViewManager {
   abstract openDiffView(data: { path: string; content: string }): Promise<void>;
 
   // accept all code generate by aider
-  abstract acceptAllFile(): Promise<void>;
+  abstract acceptAllChanges(uri: vscode.Uri): Promise<void>;
 
   // reject all code generate by aider
-  abstract rejectAllFile(): Promise<void>;
+  abstract rejectAllChanges(uri: vscode.Uri): Promise<void>;
 
   // accept a file
   abstract acceptFile(path: string): Promise<void>;

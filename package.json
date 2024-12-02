@@ -17,22 +17,23 @@
     "Other"
   ],
   "activationEvents": [
-    "onStartupFinished"
+    "onStartupFinished",
+    "onCommand:aider-composer.openInSecondarySideBar"
   ],
   "main": "./out/extension.js",
   "contributes": {
     "keybindings": [
       {
         "command": "aider-composer.AcceptAllChanges",
-        "key": "ctrl+alt+a",
-        "mac": "cmd+alt+a",
-        "when": "aider-composer.hasChanges"
+        "key": "enter",
+        "mac": "cmd+enter",
+        "when": "editorTextFocus && aider-composer.hasChanges"
       },
       {
         "command": "aider-composer.RejectAllChanges",
-        "key": "ctrl+alt+r",
-        "mac": "cmd+alt+r",
-        "when": "aider-composer.hasChanges"
+        "key": "delete",
+        "mac": "cmd+delete",
+        "when": "editorTextFocus && aider-composer.hasChanges"
       },
       {
         "command": "aider-composer.GenerateCode",
@@ -137,6 +138,11 @@
         "command": "aider-composer.InsertIntoChat",
         "title": "Insert Into Chat",
         "icon": "$(arrow-right)"
+      },
+      {
+        "command": "aider-composer.openInSecondarySideBar",
+        "title": "Open in Secondary Sidebar",
+        "icon": "$(split-horizontal)"
       }
     ],
     "menus": {
@@ -155,6 +161,11 @@
           "command": "aider-composer.SettingButtonClick",
           "when": "view == aider-composer.rightSidebarProvider",
           "group": "navigation@3"
+        },
+        {
+          "command": "aider-composer.openInSecondarySideBar",
+          "when": "view == aider-composer.rightSidebarProvider",
+          "group": "navigation@4"
         }
       ],
       "editor/title": [

@@ -20,17 +20,17 @@ type Change =
   | RemovedChange
   | AddedChange
   | {
-      type: 'modified';
-      removed: RemovedChange;
-      added: AddedChange;
-    };
+    type: 'modified';
+    removed: RemovedChange;
+    added: AddedChange;
+  };
 
 export class InlineDiffViewManager
   extends DiffViewManager
-  implements vscode.CodeLensProvider
-{
+  implements vscode.CodeLensProvider {
   private deletionDecorationType: vscode.TextEditorDecorationType;
   private insertionDecorationType: vscode.TextEditorDecorationType;
+  private hoverDecorationType: vscode.TextEditorDecorationType;
 
   private _onDidChangeCodeLenses = new vscode.EventEmitter<void>();
   readonly onDidChangeCodeLenses = this._onDidChangeCodeLenses.event;
@@ -50,12 +50,44 @@ export class InlineDiffViewManager
   ) {
     super();
 
+    this.outputChannel.info('Initializing InlineDiffViewManager...');
+
     // Set initial context value
     vscode.commands.executeCommand(
       'setContext',
       'aider-composer.hasChanges',
       false,
     );
+
+    this.outputChannel.info('Registering commands...');
+
+    this.disposables.push(
+      // Register accept all command
+      vscode.commands.registerCommand('aider-composer.AcceptAllChanges', async () => {
+        this.outputChannel.info('AcceptAllChanges command triggered');
+        const editor = vscode.window.activeTextEditor;
+        if (!editor) {
+          this.outputChannel.info('No active editor found');
+          return;
+        }
+        this.outputChannel.info(`Using active editor URI: ${editor.document.uri.toString()}`);
+        await this.acceptAllChanges(editor.document.uri);
+      }),
+
+      // Register reject all command
+      vscode.commands.registerCommand('aider-composer.RejectAllChanges', async () => {
+        this.outputChannel.info('RejectAllChanges command triggered');
+        const editor = vscode.window.activeTextEditor;
+        if (!editor) {
+          this.outputChannel.info('No active editor found');
+          return;
+        }
+        this.outputChannel.info(`Using active editor URI: ${editor.document.uri.toString()}`);
+        await this.rejectAllChanges(editor.document.uri);
+      })
+    );
+
+    this.outputChannel.info('Commands registered successfully');
 
     this.deletionDecorationType = vscode.window.createTextEditorDecorationType({
       light: {
@@ -67,21 +99,57 @@ export class InlineDiffViewManager
       isWholeLine: true,
     });
 
-    this.insertionDecorationType = vscode.window.createTextEditorDecorationType(
-      {
-        light: {
-          backgroundColor: '#e6fde8',
-        },
-        dark: {
-          backgroundColor: '#1c331e',
-        },
-        isWholeLine: true,
+    this.insertionDecorationType = vscode.window.createTextEditorDecorationType({
+      light: {
+        backgroundColor: '#e6fde8',
       },
-    );
+      dark: {
+        backgroundColor: '#1c331e',
+      },
+      isWholeLine: true,
+    });
+
+    this.hoverDecorationType = vscode.window.createTextEditorDecorationType({
+      after: {
+        contentText: '⌘+Enter to accept all, ⌘+Delete to reject all',
+        color: new vscode.ThemeColor('editorCodeLens.foreground'),
+        backgroundColor: new vscode.ThemeColor('editor.background'),
+        border: '1px solid',
+        borderColor: new vscode.ThemeColor('editorCodeLens.foreground'),
+        margin: '0 20px'
+      },
+      rangeBehavior: vscode.DecorationRangeBehavior.ClosedClosed,
+      isWholeLine: true
+    });
 
     this.disposables.push(
       this.deletionDecorationType,
       this.insertionDecorationType,
+      this.hoverDecorationType,
+
+      // Register accept all command
+      vscode.commands.registerCommand('aider-composer.AcceptAllChanges', async () => {
+        this.outputChannel.info('AcceptAllChanges command triggered');
+        const editor = vscode.window.activeTextEditor;
+        if (!editor) {
+          this.outputChannel.info('No active editor found');
+          return;
+        }
+        this.outputChannel.info(`Using active editor URI: ${editor.document.uri.toString()}`);
+        await this.acceptAllChanges(editor.document.uri);
+      }),
+
+      // Register reject all command
+      vscode.commands.registerCommand('aider-composer.RejectAllChanges', async () => {
+        this.outputChannel.info('RejectAllChanges command triggered');
+        const editor = vscode.window.activeTextEditor;
+        if (!editor) {
+          this.outputChannel.info('No active editor found');
+          return;
+        }
+        this.outputChannel.info(`Using active editor URI: ${editor.document.uri.toString()}`);
+        await this.rejectAllChanges(editor.document.uri);
+      }),
 
       vscode.workspace.onDidCloseTextDocument((doc) => {
         if (doc.uri.scheme === 'file' || doc.uri.scheme === 'untitled') {
@@ -106,50 +174,6 @@ export class InlineDiffViewManager
         this,
       ),
       this._onDidChangeCodeLenses,
-
-      // accept command
-      vscode.commands.registerCommand(
-        'aider-composer.AcceptChange',
-        (uriStr: string, i: number) => {
-          if (typeof uriStr !== 'string') {
-            const uri = vscode.window.activeTextEditor?.document.uri;
-            if (!uri) {
-              return;
-            }
-            uriStr = uri.toString();
-          }
-          this.acceptChange(uriStr, i);
-        },
-      ),
-
-      // reject command
-      vscode.commands.registerCommand(
-        'aider-composer.RejectChange',
-        (uriStr: string, i: number) => {
-          if (typeof uriStr !== 'string') {
-            const uri = vscode.window.activeTextEditor?.document.uri;
-            if (!uri) {
-              return;
-            }
-          }
-          this.rejectChange(uriStr, i);
-        },
-      ),
-
-      // accept all command
-      vscode.commands.registerCommand(
-        'aider-composer.AcceptAllChanges',
-        (uri) => {
-          this.acceptAllChanges(uri);
-        },
-      ),
-      // reject all command
-      vscode.commands.registerCommand(
-        'aider-composer.RejectAllChanges',
-        (uri) => {
-          this.rejectAllChanges(uri);
-        },
-      ),
 
       vscode.window.onDidChangeActiveTextEditor((editor) => {
         if (editor) {
@@ -220,6 +244,7 @@ export class InlineDiffViewManager
     index?: number,
     count?: number,
   ) {
+    this.outputChannel.info('Drawing changes...');
     // if has index and count, it means we need to delete a change
     if (index !== undefined && count !== undefined) {
       for (let i = index + 1; i < fileChange.changes.length; i++) {
@@ -237,6 +262,28 @@ export class InlineDiffViewManager
     // update decorations from changes
     let deletions: vscode.DecorationOptions[] = [];
     let insertions: vscode.DecorationOptions[] = [];
+
+    // Add hover box at the top right if there are any changes
+    if (fileChange.changes.length > 0) {
+      this.outputChannel.info(`Found ${fileChange.changes.length} changes, adding hover box`);
+      const hoverOptions: vscode.DecorationOptions[] = [{
+        range: new vscode.Range(0, 0, 0, 0),
+        renderOptions: {
+          after: {
+            contentText: '⌘+Enter to accept all, ⌘+Delete to reject all',
+            backgroundColor: new vscode.ThemeColor('editor.background'),
+            border: '1px solid',
+            borderColor: new vscode.ThemeColor('editorCodeLens.foreground'),
+            margin: '0 20px'
+          }
+        }
+      }];
+      editor.setDecorations(this.hoverDecorationType, hoverOptions);
+    } else {
+      this.outputChannel.info('No changes found, removing hover box');
+      editor.setDecorations(this.hoverDecorationType, []);
+    }
+
     for (const change of fileChange.changes) {
       if (change.type === 'removed') {
         deletions.push({
@@ -449,53 +496,6 @@ export class InlineDiffViewManager
     }
   }
 
-  private async acceptAllChanges(uri: vscode.Uri) {
-    this.outputChannel.debug(`Accept all changes: ${uri}`);
-
-    const fileChange = this.fileChangeMap.get(uri.toString());
-    if (!fileChange) {
-      return;
-    }
-
-    const editor = await vscode.window.showTextDocument(uri);
-    const edit = new vscode.WorkspaceEdit();
-    for (let i = fileChange.changes.length - 1; i >= 0; i--) {
-      const change = fileChange.changes[i];
-      if (change.type === 'added') {
-        // do nothing
-      } else if (change.type === 'removed') {
-        edit.delete(
-          uri,
-          new vscode.Range(change.line, 0, change.line + change.count, 0),
-        );
-      } else {
-        edit.delete(
-          uri,
-          new vscode.Range(
-            change.removed.line,
-            0,
-            change.removed.line + change.removed.count,
-            0,
-          ),
-        );
-      }
-    }
-    await vscode.workspace.applyEdit(edit);
-    this.fileChangeMap.delete(uri.toString());
-    this._onDidChange.fire({
-      type: 'accept',
-      path: uri.fsPath,
-    });
-
-    await vscode.commands.executeCommand(
-      'setContext',
-      'aider-composer.hasChanges',
-      false,
-    );
-    await this.saveDocument(editor);
-    this._onDidChangeCodeLenses.fire();
-  }
-
   private async saveDocument(editor: vscode.TextEditor) {
     if (editor.document.isDirty) {
       editor.setDecorations(this.deletionDecorationType, []);
@@ -504,14 +504,16 @@ export class InlineDiffViewManager
     }
   }
 
-  private async rejectAllChanges(uri: vscode.Uri) {
-    this.outputChannel.debug(`Reject all changes: ${uri}`);
+  async rejectAllChanges(uri: vscode.Uri) {
+    this.outputChannel.info(`Reject all changes executing for: ${uri.toString()}`);
 
     const fileChange = this.fileChangeMap.get(uri.toString());
     if (!fileChange) {
+      this.outputChannel.info('No changes found in fileChangeMap');
       return;
     }
 
+    this.outputChannel.info(`Found ${fileChange.changes.length} changes to reject`);
     const editor = await vscode.window.showTextDocument(uri);
     const edit = new vscode.WorkspaceEdit();
     for (let i = fileChange.changes.length - 1; i >= 0; i--) {
@@ -541,6 +543,11 @@ export class InlineDiffViewManager
       type: 'reject',
       path: uri.fsPath,
     });
+
+    // Clear all decorations including hover box
+    editor.setDecorations(this.deletionDecorationType, []);
+    editor.setDecorations(this.insertionDecorationType, []);
+    editor.setDecorations(this.hoverDecorationType, []);
 
     await vscode.commands.executeCommand(
       'setContext',
@@ -669,10 +676,57 @@ export class InlineDiffViewManager
     }
   }
 
-  async acceptAllFile(): Promise<void> {
-    for (const uri of this.fileChangeMap.keys()) {
-      await this.acceptAllChanges(vscode.Uri.parse(uri));
+  async acceptAllChanges(uri: vscode.Uri) {
+    this.outputChannel.debug(`Accept all changes triggered for: ${uri}`);
+
+    const fileChange = this.fileChangeMap.get(uri.toString());
+    if (!fileChange) {
+      return;
     }
+
+    this.outputChannel.info(`Found ${fileChange.changes.length} changes to accept`);
+    const editor = await vscode.window.showTextDocument(uri);
+    const edit = new vscode.WorkspaceEdit();
+    for (let i = fileChange.changes.length - 1; i >= 0; i--) {
+      const change = fileChange.changes[i];
+      if (change.type === 'added') {
+        // do nothing
+      } else if (change.type === 'removed') {
+        edit.delete(
+          uri,
+          new vscode.Range(change.line, 0, change.line + change.count, 0),
+        );
+      } else {
+        edit.delete(
+          uri,
+          new vscode.Range(
+            change.removed.line,
+            0,
+            change.removed.line + change.removed.count,
+            0,
+          ),
+        );
+      }
+    }
+    await vscode.workspace.applyEdit(edit);
+    this.fileChangeMap.delete(uri.toString());
+    this._onDidChange.fire({
+      type: 'accept',
+      path: uri.fsPath,
+    });
+
+    // Clear all decorations including hover box
+    editor.setDecorations(this.deletionDecorationType, []);
+    editor.setDecorations(this.insertionDecorationType, []);
+    editor.setDecorations(this.hoverDecorationType, []);
+
+    await vscode.commands.executeCommand(
+      'setContext',
+      'aider-composer.hasChanges',
+      false,
+    );
+    await this.saveDocument(editor);
+    this._onDidChangeCodeLenses.fire();
   }
 
   async rejectAllFile(): Promise<void> {

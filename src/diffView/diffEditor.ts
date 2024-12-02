@@ -96,10 +96,10 @@ export class DiffEditorViewManager extends DiffViewManager {
     try {
       const originalUri = isNewFile
         ? vscode.Uri.parse(
-            `${DiffEditorViewManager.DiffContentProviderId}:${data.path}`,
-          ).with({
-            query: Buffer.from('').toString('base64'),
-          })
+          `${DiffEditorViewManager.DiffContentProviderId}:${data.path}`,
+        ).with({
+          query: Buffer.from('').toString('base64'),
+        })
         : vscode.Uri.file(data.path);
       const modifiedUri = vscode.Uri.parse(
         `${DiffEditorViewManager.DiffContentProviderId}:${data.path}`,
@@ -142,7 +142,7 @@ export class DiffEditorViewManager extends DiffViewManager {
         (tab) =>
           tab.input instanceof vscode.TabInputTextDiff &&
           tab.input.modified.scheme ===
-            DiffEditorViewManager.DiffContentProviderId,
+          DiffEditorViewManager.DiffContentProviderId,
       );
 
       // Close the matching tabs
@@ -180,7 +180,7 @@ export class DiffEditorViewManager extends DiffViewManager {
         (tab) =>
           tab.input instanceof vscode.TabInputTextDiff &&
           tab.input.modified.scheme ===
-            DiffEditorViewManager.DiffContentProviderId &&
+          DiffEditorViewManager.DiffContentProviderId &&
           tab.input.modified.path === path,
       );
 
@@ -206,5 +206,22 @@ export class DiffEditorViewManager extends DiffViewManager {
 
   async rejectFile(path: string): Promise<void> {
     await this.closeDiffEditor(path);
+  }
+
+  async rejectAllChanges(uri: vscode.Uri): Promise<void> {
+    const content = this.fileChangeSet.get(uri.toString());
+    if (content) {
+      this.fileChangeSet.delete(uri.toString());
+      this._onDidChange.fire({ type: 'reject', path: uri.fsPath });
+    }
+  }
+
+  async acceptAllChanges(uri: vscode.Uri): Promise<void> {
+    const content = this.fileChangeSet.get(uri.toString());
+    if (content) {
+      await vscode.workspace.fs.writeFile(uri, Buffer.from(content));
+      this.fileChangeSet.delete(uri.toString());
+      this._onDidChange.fire({ type: 'accept', path: uri.fsPath });
+    }
   }
 }

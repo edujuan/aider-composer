@@ -342,12 +342,18 @@ class VscodeReactView implements WebviewViewProvider {
   }
 
   private async acceptGenerateCode() {
-    await this.diffViewManager.acceptAllFile();
+    const editor = vscode.window.activeTextEditor;
+    if (editor) {
+      await this.diffViewManager.acceptAllChanges(editor.document.uri);
+    }
     return this.generateCodeManager.clearCurrentGeneration();
   }
 
   private async rejectGenerateCode() {
-    await this.diffViewManager.rejectAllFile();
+    const editor = vscode.window.activeTextEditor;
+    if (editor) {
+      await this.diffViewManager.rejectAllChanges(editor.document.uri);
+    }
     return this.generateCodeManager.clearCurrentGeneration();
   }
 
