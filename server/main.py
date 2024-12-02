@@ -136,8 +136,7 @@ class ChatSessionManager:
             pretty=False,
             yes=False,
             dry_run=False,
-            encoding='utf-8',
-            fancy_input=False,
+            encoding='utf-8'
         )
         self.io = io
 
@@ -208,8 +207,8 @@ class ChatSessionManager:
                     }
                     yield ChatChunkData(event='data', data=data)
 
-                if manager.coder.usage_report:
-                    yield ChatChunkData(event='usage', data=manager.coder.usage_report)
+                if self.coder.usage_report:
+                    yield ChatChunkData(event='usage', data=self.coder.usage_report)
                 
                 if not self.coder.reflected_message:
                     break
@@ -231,7 +230,7 @@ class ChatSessionManager:
                         yield ChatChunkData(event='log', data={"message": '\n'.join(error_lines)})
 
             # get write files
-            write_files = manager.io.get_captured_write_files()
+            write_files = self.io.get_captured_write_files()
             if write_files:
                 data = {
                     "write": write_files,
@@ -312,6 +311,7 @@ def set_history():
 @app.route('/api/chat/setting', methods=['POST'])
 def update_setting():
     data = request.json
+    print('REQUEST', request.json)
     setting = ChatSetting(**data)
 
     manager.update_model(setting)

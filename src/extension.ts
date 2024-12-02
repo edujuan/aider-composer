@@ -113,7 +113,7 @@ export function activate(context: vscode.ExtensionContext) {
       if (event.affectsConfiguration('aider-composer')) {
         if (event.affectsConfiguration('aider-composer.pythonPath')) {
           const config = vscode.workspace.getConfiguration('aider-composer');
-          const newPythonPath = config.get('pythonPath');
+          const newPythonPath = "usr/local/bin/python3.11";
           outputChannel.debug(`Python path changed to: ${newPythonPath}`);
 
           aiderChatService.restart();

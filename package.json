@@ -153,7 +153,7 @@
       "properties": {
         "aider-composer.pythonPath": {
           "type": "string",
-          "default": "",
+          "default": "usr/local/bin/python3.11",
           "description": "Python path which python executable is in and aider-chat package is installed"
         },
         "aider-composer.inlineDiff.enable": {
@@ -180,7 +180,7 @@
     "@semantic-release/git": "^10.0.1",
     "@types/diff": "^6.0.0",
     "@types/mocha": "^10.0.7",
-    "@types/node": "20.x",
+    "@types/node": "^20.17.9",
     "@types/vscode": "^1.93.0",
     "@typescript-eslint/eslint-plugin": "^8.3.0",
     "@typescript-eslint/parser": "^8.3.0",
